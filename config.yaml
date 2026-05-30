@@ -1,0 +1,79 @@
+# BirdCLEF 2026 Configuration
+
+# Dataset Configuration
+dataset:
+  sr: 32000              # Sampling rate (Hz)
+  duration: 5.0          # Clip duration (seconds)
+  n_mels: 128            # Number of mel bins
+  n_fft: 2048            # FFT window size
+  hop_length: 512        # Hop length for STFT
+  train_csv: "data/train.csv"
+  soundscapes_csv: "data/train_soundscapes_labels.csv"
+  taxonomy_csv: "data/taxonomy.csv"
+  audio_dir: "data/train_audio"
+  test_csv: "data/test.csv"
+  test_audio_dir: "data/test_audio"
+  val_split: 0.1         # Validation split ratio
+  num_classes: 234
+
+# Data Augmentation (SpecAugment)
+augmentation:
+  enabled: true
+  freq_mask_param: 30    # Max frequency mask width (bins)
+  time_mask_param: 40    # Max time mask width (frames)
+
+# Model Configuration
+model:
+  architecture: "convnext_tiny"
+  pretrained: true
+  num_classes: 234
+  in_channels: 1         # Grayscale spectrograms
+
+# Training Configuration
+training:
+  num_epochs: 10
+  batch_size: 32
+  learning_rate: 0.001
+  weight_decay: 0.01
+  warmup_epochs: 1
+  scheduler: "cosine"    # "cosine", "linear", "step"
+  optimizer: "adamw"     # "adamw", "sgd"
+  loss_fn: "bce_with_logits"
+  device: "auto"         # "cuda", "cpu", "auto"
+  seed: 42
+  num_workers: 4
+  pin_memory: true
+  mixed_precision: false # Requires GPU
+
+# Model Checkpointing
+checkpoint:
+  save_dir: "checkpoints"
+  save_best: true
+  metric: "val_loss"     # "val_loss", "val_auc"
+  patience: 3            # Early stopping patience
+
+# Inference Configuration
+inference:
+  model_path: "model.pt"
+  batch_size: 16
+  num_clips: 3           # Clips per audio
+  clip_aggregation: "mean"  # "mean", "max", "weighted"
+  use_quantization: true # INT8 quantization
+  confidence_threshold: 0.5
+  output_csv: "predictions.csv"
+
+# Ensemble Configuration
+ensemble:
+  enabled: false
+  models:
+    - "model_v1.pt"
+    - "model_v2.pt"
+  method: "average"      # "average", "weighted", "voting"
+  weights: [0.5, 0.5]    # For weighted ensemble
+
+# Logging
+logging:
+  level: "INFO"          # "DEBUG", "INFO", "WARNING", "ERROR"
+  log_dir: "logs"
+  log_file: "training.log"
+  log_interval: 10       # Batches between logs
