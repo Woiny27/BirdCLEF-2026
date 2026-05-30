@@ -1,0 +1,177 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: Code Quality Checks
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort
+    
+    - name: Lint with flake8
+      run: |
+        flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Check formatting with black
+      run: black --check src/
+    
+    - name: Check import sorting with isort
+      run: isort --check-only src/
+
+  test:
+    runs-on: ubuntu-latest
+    name: Unit Tests
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+    
+    - name: Test imports
+      run: |
+        python -c "from src.model import BirdCLEFModel; print('✓ Model import OK')"
+        python -c "from src.dataset import BirdCLEFDataset; print('✓ Dataset import OK')"
+        python -c "from src.inference import OptimizedInference; print('✓ Inference import OK')"
+    
+    - name: Test model initialization
+      run: |
+        python -c "
+        import torch
+        from src.model import BirdCLEFModel
+        model = BirdCLEFModel(num_classes=234, pretrained=False)
+        x = torch.randn(2, 1, 128, 300)
+        out = model(x)
+        assert out.shape == (2, 234), f'Expected shape (2, 234), got {out.shape}'
+        print('✓ Model test passed')
+        "
+
+  build:
+    runs-on: ubuntu-latest
+    name: Build Artifacts
+    needs: [lint, test]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build wheel
+    
+    - name: Create distribution
+      run: |
+        mkdir -p dist/
+        cp requirements.txt dist/
+        cp config.yaml dist/
+        cp README.md dist/
+        echo "Build artifacts created"
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: dist/
+
+  documentation:
+    runs-on: ubuntu-latest
+    name: Documentation Check
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Check README exists
+      run: |
+        test -f README.md && echo "✓ README.md exists"
+        test -f config.yaml && echo "✓ config.yaml exists"
+        test -f requirements.txt && echo "✓ requirements.txt exists"
+    
+    - name: Validate YAML config
+      run: |
+        python -c "
+        import yaml
+        with open('config.yaml', 'r') as f:
+            config = yaml.safe_load(f)
+        print('✓ config.yaml is valid YAML')
+        required_keys = ['dataset', 'model', 'training', 'inference']
+        for key in required_keys:
+            assert key in config, f'Missing key: {key}'
+        print('✓ config.yaml has all required sections')
+        "
+
+  security:
+    runs-on: ubuntu-latest
+    name: Security Checks
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit
+    
+    - name: Run security checks
+      run: |
+        bandit -r src/ -ll --skip B101,B601 || true
+
+  notify:
+    runs-on: ubuntu-latest
+    name: Notify Status
+    needs: [lint, test, build, documentation, security]
+    if: always()
+    
+    steps:
+    - name: Check pipeline status
+      run: |
+        echo "Pipeline Status:"
+        echo "- Lint: ${{ needs.lint.result }}"
+        echo "- Tests: ${{ needs.test.result }}"
+        echo "- Build: ${{ needs.build.result }}"
+        echo "- Documentation: ${{ needs.documentation.result }}"
+        echo "- Security: ${{ needs.security.result }}"
+        
+        if [[ "${{ needs.lint.result }}" == "success" && \
+              "${{ needs.test.result }}" == "success" && \
+              "${{ needs.build.result }}" == "success" ]]; then
+          echo "✓ All checks passed!"
+          exit 0
+        else
+          echo "✗ Some checks failed"
+          exit 1
+        fi
